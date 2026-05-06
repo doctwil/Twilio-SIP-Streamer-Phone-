@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Caller Dashboard</title>
+  <style>
+    body {
+      font-family: 'Courier New', monospace;
+      background: url('images/backgound.png') no-repeat center center fixed;
+      background-size: cover;
+      color: #e8e8e8;
+      padding: 20px;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    h1 {
+      font-size: 24px;
+      margin-bottom: 20px;
+      border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+      padding-bottom: 10px;
+      color: #ffffff;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+    }
+
+    .caller-info {
+      margin-bottom: 20px;
+      padding: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(0, 0, 0, 0.55);
+      border-radius: 6px;
+      backdrop-filter: blur(6px);
+    }
+
+    .info-line {
+      margin: 5px 0;
+    }
+
+    .clear-btn {
+      background: rgba(255, 255, 255, 0.12);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      padding: 10px 20px;
+      cursor: pointer;
+      margin-bottom: 20px;
+      font-family: 'Courier New', monospace;
+      border-radius: 4px;
+      backdrop-filter: blur(4px);
+      transition: background 0.2s;
+    }
+
+    .clear-btn:hover {
+      background: rgba(255, 255, 255, 0.25);
+    }
+
+    #debug-info {
+      background: rgba(0, 0, 0, 0.5) !important;
+      border: 1px solid rgba(255, 255, 255, 0.15) !important;
+      border-radius: 6px;
+      color: #e8e8e8;
+      backdrop-filter: blur(6px);
+    }
+  </style>
+</head>
+<body>
+  <button class="clear-btn" onclick="clearHistory()">Clear History</button>
+  <button class="clear-btn" onclick="fetchCallers()">Refresh Now</button>
+  <button class="clear-btn" onclick="window.location.href='index.html'">Back to Home</button>
+  
+  <h1>LIVE CALLER DASHBOARD</h1>
+  
+  <div id="debug-info" style="margin-bottom: 20px; padding: 10px;">
+    <strong>Debug Info:</strong><br>
+    Last Update: <span id="last-update">Never</span><br>
+    API Status: <span id="api-status">Unknown</span><br>
+    Server Time: <span id="server-time">Unknown</span><br>
+    Memory Status: <span id="memory-status">Unknown</span><br>
+    Total Callers: <span id="debug-count">0</span><br>
+    LocalStorage Count: <span id="localstorage-count">0</span>
+  </div>
+  
+  <div id="callers-container">
+    <p>No callers yet. Waiting for incoming calls...</p>
+  </div>
+
+  <script>
+    const API_URL = './get-caller-info';
+    const REFRESH_INTERVAL = 1000; // 1 second for near-realtime updates
+    const STORAGE_KEY = 'sip_caller_history';
+    
+    // Load existing callers from localStorage
+    let allCallers = [];
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        allCallers = JSON.parse(stored);
+        console.log('Loaded from localStorage:', allCallers.length, 'callers');
+      }
+    } catch (e) {
+      console.error('Error loading from localStorage:', e);
+    }
+    
+    // Display immediately from localStorage
+    displayCallers(allCallers);
+
+    async function fetchCallers() {
+      try {
+        document.getElementById('api-status').textContent = 'Fetching...';
+        
+        const response = await fetch(API_URL);
+        const data = await response.json();
+        const newCallers = data.callers || [];
+        
+        console.log('========== DASHBOARD FETCH ==========');
+        console.log('Fetched from API:', newCallers.length, 'callers', newCallers);
+        console.log('Server time:', data.serverTime);
+        console.log('Memory status:', data.memoryStatus);
+        
+        document.getElementById('api-status').textContent = 'OK';
+        document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+        document.getElementById('server-time').textContent = data.serverTime || 'N/A';
+        document.getElementById('memory-status').textContent = data.memoryStatus || 'N/A';
+        document.getElementById('localstorage-count').textContent = allCallers.length;
+        
+        // Merge new callers with existing ones
+        newCallers.forEach(newCaller => {
+          const existingIndex = allCallers.findIndex(c => c.callSid === newCaller.callSid);
+          if (existingIndex >= 0) {
+            // Update existing caller
+            console.log('Updating caller:', newCaller.callSid);
+            allCallers[existingIndex] = newCaller;
+          } else {
+            // Add new caller
+            console.log('Adding new caller:', newCaller.callSid);
+            allCallers.push(newCaller);
+          }
+        });
+        
+        document.getElementById('debug-count').textContent = allCallers.length;
+        
+        // Save to localStorage
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(allCallers));
+          console.log('Saved to localStorage:', allCallers.length, 'callers');
+        } catch (e) {
+          console.error('Error saving to localStorage:', e);
+        }
+        
+        displayCallers(allCallers);
+      } catch (error) {
+        console.error('Error fetching callers:', error);
+        document.getElementById('api-status').textContent = 'ERROR: ' + error.message;
+        // Still display what we have in localStorage
+        displayCallers(allCallers);
+      }
+    }
+
+    function displayCallers(callers) {
+      const container = document.getElementById('callers-container');
+      
+      console.log('Displaying callers:', callers);
+      
+      // Sort by most recent first
+      const sortedCallers = [...callers].sort((a, b) => 
+        new Date(b.timestamp) - new Date(a.timestamp)
+      );
+
+      if (sortedCallers.length === 0) {
+        container.innerHTML = '<p>No callers yet. Waiting for incoming calls...</p>';
+        return;
+      }
+
+      container.innerHTML = sortedCallers.map((caller, index) => {
+        const time = new Date(caller.timestamp).toLocaleString();
+        const name = caller.name || 'Unknown';
+        const topic = caller.topic || 'Not provided';
+        const phone = caller.from || 'Unknown';
+        const status = (caller.status || 'waiting').toUpperCase();
+        
+        return `
+          <div class="caller-info">
+            <div class="info-line"><strong>CALLER ${index + 1}</strong></div>
+            <div class="info-line">Name: ${name}</div>
+            <div class="info-line">Topic: ${topic}</div>
+            <div class="info-line">Phone: ${phone}</div>
+            <div class="info-line">Time: ${time}</div>
+            <div class="info-line">Status: ${status}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function clearHistory() {
+      if (confirm('Are you sure you want to clear all caller history?')) {
+        allCallers = [];
+        localStorage.removeItem(STORAGE_KEY);
+        // Also clear server-side Sync storage
+        fetch(API_URL + '?action=clear').catch(e => console.error('Error clearing server:', e));
+        console.log('History cleared');
+        displayCallers(allCallers);
+      }
+    }
+
+    // Initial display from localStorage (already called above)
+    // Then start fetching from API
+    fetchCallers();
+
+    // Refresh every 2 seconds
+    setInterval(fetchCallers, REFRESH_INTERVAL);
+    
+    console.log('Dashboard initialized with', allCallers.length, 'stored callers');
+  </script>
+</body>
+</html>
